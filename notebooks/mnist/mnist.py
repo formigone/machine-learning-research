@@ -21,8 +21,12 @@ https://www.tensorflow.org/get_started/mnist/pros
 import argparse
 import sys
 import os
+import time
+import json
 import numpy as np
+import urllib.parse as urllib
 from PIL import Image
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from tensorflow.examples.tutorials.mnist import input_data
 
@@ -139,7 +143,7 @@ def main(_):
             saver.restore(sess, FLAGS.session_dir)
         except tf.OpError:
             sess.run(tf.global_variables_initializer())
-        if FLAGS.classify is None:
+        if FLAGS.classify is None and FLAGS.rest is None:
             graph_location = FLAGS.graph_dir
             print('Saving graph to: %s' % graph_location)
             train_writer = tf.summary.FileWriter(graph_location)
@@ -161,7 +165,7 @@ def main(_):
             print('Accuracy %g' % accuracy.eval(feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
             save_path = saver.save(sess, FLAGS.session_dir)
             print('Model saved in file: %s' % save_path)
-        else:
+        elif FLAGS.classify is not None:
             file = FLAGS.classify
             print('Classifying image %s' % file)
             img = Image.open(file)
@@ -171,6 +175,51 @@ def main(_):
             print('PRED')
             print(pred)
             print(np.argmax(pred))
+        elif FLAGS.rest is not None:
+            print('Running...')
+            host = "localhost"
+            port = 6006
+
+            class Server(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    query = urllib.parse_qs(urllib.urlparse(self.path).query)
+                    data = {}
+
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    try:
+                        if 'file' in query:
+                            file = '/Users/rsilveira/Desktop/' + str(query['file'][0])
+                            data['file'] = file
+                            img = Image.open(file)
+                            img = img.resize((28, 28))
+                            img = np.array(img) * 255
+                        elif 'data' in query:
+                            data['data'] = query.data
+                            img = np.array(json.loads(query['data']))
+                            img = img.resize((28, 28))
+
+                        pred = sess.run(y_conv, feed_dict={x: [img.flatten()], keep_prob: 1.0})
+                        data['predictions'] = pred.flatten().tolist()
+                        data['prediction'] = int(np.argmax(pred))
+                        data['classes'] = [n for n in range(10)]
+                        print(data)
+                        self.wfile.write(bytes(json.dumps(data), "utf-8"))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf-8"))
+
+            server = HTTPServer((host, port), Server)
+            print(time.asctime(), "Server Starts - %s:%s" % (host, port))
+
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+
+            server.server_close()
+            print(time.asctime(), "Server Stops - %s:%s" % (host, port))
 
 
 if __name__ == '__main__':
@@ -190,5 +239,8 @@ if __name__ == '__main__':
     parser.add_argument('--classify', type=str,
                         default=None,
                         help='Path of file to classify')
+    parser.add_argument('--rest', type=str,
+                        default=None,
+                        help='Run script as daemon')
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
