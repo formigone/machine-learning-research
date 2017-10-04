@@ -120,6 +120,12 @@ def bias_variable(shape):
 
 
 def main(_):
+    # mnist = input_data.read_data_sets(FLAGS.data_dir, one_hot=True)
+    # batch = mnist.train.next_batch(FLAGS.training_batch)
+    # print(json.dumps(batch[0][0].tolist()))
+    # return
+    #
+
     x = tf.placeholder(tf.float32, [None, 784])
     y_ = tf.placeholder(tf.float32, [None, 10])
     y_conv, keep_prob = deepnn(x)
@@ -210,6 +216,67 @@ def main(_):
                     except Exception as e:
                         self.send_response(500)
                         self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf-8"))
+
+                def do_POST(self):
+                    data = {}
+
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    post_data = json.loads(post_data)
+                    pixels = list()
+
+                    if 'pixels' in post_data:
+                        pixels = post_data['pixels']
+                        print('PIXELS: ' + str(len(post_data['pixels'])))
+
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+
+                    if len(pixels) < 28 * 28:
+                        self.send_response(400)
+                        data['error'] = 'Invalid input. Pixels array must be ' + str(28 * 28) + ' elements.'
+                    else:
+                        try:
+                            pred = sess.run(y_conv, feed_dict={x: [pixels], keep_prob: 1.0})
+                            data['predictions'] = pred.flatten().tolist()
+                            data['prediction'] = int(np.argmax(pred))
+                            data['classes'] = [n for n in range(10)]
+                            print(data)
+                        except Exception as e:
+                            self.send_response(500)
+                            data['error'] = str(e)
+
+                    self.wfile.write(bytes(json.dumps(data), "utf-8"))
+                    # data = {}
+                    #
+                    # content_length = int(self.headers['Content-Length'])
+                    # post_data = self.rfile.read(content_length)
+                    # post_data = json.loads(post_data)
+                    # pixels = list()
+                    #
+                    # if 'pixels' in post_data:
+                    #     pixels = post_data['pixels']
+                    #     print('PIXELS: ' + str(len(post_data['pixels'])))
+                    #
+                    # self.send_header("Content-type", "application/json")
+                    # if len(pixels) < 28 * 28:
+                    #     self.send_response(400)
+                    #     data['error'] = 'Invalid input. Pixels array must be ' + str(28 * 28) + ' elements.'
+                    # else:
+                    #     try:
+                    #         # pred = sess.run(y_conv, feed_dict={x: [pixels], keep_prob: 1.0})
+                    #         # data['predictions'] = pred.flatten().tolist()
+                    #         # data['prediction'] = int(np.argmax(pred))
+                    #         data['classes'] = [n for n in range(10)]
+                    #         self.send_response(200)
+                    #     except Exception as e:
+                    #         self.send_response(500)
+                    #         data['error'] = str(e)
+                    #
+                    # print(data)
+                    # self.end_headers()
+                    # self.wfile.write(bytes(json.dumps(data), "utf-8"))
 
             server = HTTPServer((host, port), Server)
             print(time.asctime(), "Server Starts - %s:%s" % (host, port))
