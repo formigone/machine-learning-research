@@ -92,6 +92,7 @@ def deepnn(x):
         W_fc2 = weight_variable([1024, 10])
         b_fc2 = bias_variable([10])
 
+        # Des this make "fc2/add" the "output_node_names" for convert_variables_to_constants??
         y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
     return y_conv, keep_prob
 
@@ -147,16 +148,19 @@ def main(_):
     with tf.Session() as sess:
         try:
             saver.restore(sess, FLAGS.session_dir)
+            print('Restored session from: %s' % FLAGS.session_dir)
         except tf.OpError:
             sess.run(tf.global_variables_initializer())
         if FLAGS.classify is None and FLAGS.rest is None:
             graph_location = FLAGS.graph_dir
-            print('Saving graph to: %s' % graph_location)
-            train_writer = tf.summary.FileWriter(graph_location)
-            train_writer.add_graph(tf.get_default_graph())
+
+            # TensorBoard
+            # print('Saving graph to: %s' % graph_location)
+            # train_writer = tf.summary.FileWriter(graph_location)
+            # train_writer.add_graph(tf.get_default_graph())
 
             mnist = input_data.read_data_sets(FLAGS.data_dir, one_hot=True)
-            for i in range(100000):
+            for i in range(101):
                 batch = mnist.train.next_batch(FLAGS.training_batch)
                 train_step.run(feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5})
 
@@ -172,6 +176,24 @@ def main(_):
             print('Accuracy %g' % accuracy.eval(feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
             save_path = saver.save(sess, FLAGS.session_dir)
             print('Model saved in file: %s' % save_path)
+
+            print('Freezing model...')
+            # We use a built-in TF helper to export variables to constants
+            output_graph_def = tf.graph_util.convert_variables_to_constants(
+                sess,
+                tf.get_default_graph().as_graph_def(),
+                'fc2/add'.split(",")  # The output node names are used to select the useful nodes
+            )
+
+            # Finally we serialize and dump the output graph to the filesystem
+            with tf.gfile.GFile(FLAGS.session_dir + '-frozen.pb', 'wb') as f:
+                f.write(output_graph_def.SerializeToString())
+            print('%d ops in the final graph.' % len(output_graph_def.node))
+
+            # print('---------------------')
+            # print('Ops on default graph:')
+            # for op in tf.get_default_graph().get_operations():
+            #     print(op.name)
         elif FLAGS.classify is not None:
             file = FLAGS.classify
             print('Classifying image %s' % file)
